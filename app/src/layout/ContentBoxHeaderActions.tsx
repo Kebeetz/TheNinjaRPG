@@ -179,6 +179,8 @@ export function ContentBoxHeaderActions({
       >
         <List className="h-5 w-5" aria-hidden />
       </Button>
+      {/* Above the Activity dock (z-40) and below dialogs and sheets (z-50), which a control
+          inside may open while the panel stays open. */}
       <section
         id={panelId}
         aria-label={isOverflowing ? `${label} controls` : undefined}
@@ -191,7 +193,7 @@ export function ContentBoxHeaderActions({
         }
         className={cn(
           isOverflowing &&
-            "bg-popover text-popover-foreground absolute top-full right-0 z-[60] mt-1 max-h-[60dvh] max-w-[calc(100vw-2rem)] overflow-auto rounded-md border p-3 shadow-md",
+            "bg-popover text-popover-foreground absolute top-full right-0 z-[45] mt-1 max-h-[60dvh] max-w-[calc(100vw-2rem)] overflow-auto rounded-md border p-3 shadow-md",
           isOverflowing && placement.above && "top-auto bottom-full mb-1",
           isOverflowing &&
             !isOpen &&

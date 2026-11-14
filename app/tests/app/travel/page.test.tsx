@@ -1,6 +1,13 @@
 import { afterEach, beforeEach, expect, it, vi } from "bun:test";
 import { QueryClient, QueryObserver } from "@tanstack/react-query";
-import { act, cleanup, fireEvent, render, renderHook } from "@testing-library/react";
+import {
+  act,
+  cleanup,
+  fireEvent,
+  render,
+  renderHook,
+  within,
+} from "@testing-library/react";
 import * as dynamic from "next/dynamic";
 import * as navigation from "next/navigation";
 import * as client from "@/app/_trpc/client";
@@ -231,6 +238,17 @@ it("updates the Travel destination when the saved automatic-wake preference chan
     result.current.systems.find((entry) => entry.id === "tutorial-travel")?.href,
   ).toBe("/home");
 });
+it("keeps the map tools in a toolbar outside the header controls", () => {
+  const view = render(<TravelPage />);
+  const toolbar = view.getByRole("toolbar", { name: "Travel controls" });
+  expect(within(toolbar).getByRole("button", { name: "Quick Travel" })).toBeDefined();
+  expect(
+    view.container.querySelector(
+      "[data-content-box-actions] [aria-label='Quick Travel']",
+    ),
+  ).toBeNull();
+});
+
 it("keeps Quick Travel disabled for the current sector", async () => {
   actor.status = "ASLEEP";
   actor.sector = 1539;
