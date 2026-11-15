@@ -63,6 +63,7 @@ import { useTutorialStep } from "@/hooks/tutorial";
 import { useConsumeItem } from "@/hooks/useItemActions";
 import { useLiveCountdown } from "@/hooks/useLiveCountdown";
 import { useMapAssetLibrary } from "@/hooks/useMapAssetLibrary";
+import { useMediaQuery } from "@/hooks/useMediaQuery";
 import { useSectorCacheUpdate } from "@/hooks/useSectorCacheUpdate";
 import AutoAttackModal from "@/layout/AutoAttackModal";
 import { ActionSelector } from "@/layout/CombatActions";
@@ -184,6 +185,7 @@ function Travel() {
   );
 
   const [activeTab, setActiveTab] = useState<string>("");
+  const isPhone = useMediaQuery(TRAVEL_MAP_RAIL_QUERY);
   const [focusSector, setFocusSector] = useState<number | null>(null);
   const [isWorldExpanded, setWorldExpanded] = useState(false);
   const [cameraFocusRevision, setCameraFocusRevision] = useState(0);
@@ -1072,6 +1074,331 @@ function Travel() {
   );
   const shownConsumables = consumableItems?.map((ui) => ({ ...ui.item, ...ui }));
 
+  const navTabs = (
+    <NavTabs
+      current={isGlobal ? globalLink : activeTab}
+      options={isTraveling ? [globalLink] : [sectorLink, globalLink]}
+      labels={{ [sectorLink]: <TravelPositionLabel /> }}
+      setValue={setActiveTab}
+      onChange={(value) => {
+        if (value !== globalLink) setCameraFocusRevision((previous) => previous + 1);
+      }}
+    />
+  );
+  const mapTools = (
+    <>
+      <WarFieldActions />
+      {!isGlobal && activeTab !== "" && (
+        <>
+          {userData?.anbuId &&
+            (autoAttackMode ? (
+              <button
+                type="button"
+                aria-label="Stop auto-attack"
+                aria-pressed={true}
+                className={mapToolClassName}
+                onClick={() => setAutoAttackMode(false)}
+              >
+                <Zap className="h-7 w-7 text-red-500" />
+              </button>
+            ) : (
+              <button
+                type="button"
+                aria-label="Start auto-attack"
+                aria-pressed={false}
+                className={mapToolClassName}
+                onClick={() => setShowAutoAttackModal(true)}
+              >
+                <ZapOff className="h-7 w-7 hover:text-red-500" />
+              </button>
+            ))}
+          <StealthControls
+            onRevealed={(players) => {
+              setRevealedPlayers(players);
+              setShowRevealedPlayersModal(true);
+            }}
+          />
+          <TooltipProvider delayDuration={50}>
+            <Tooltip>
+              <TooltipTrigger
+                aria-label="Show other players on the map"
+                aria-pressed={showOtherUsers}
+                className={mapToolClassName}
+                onClick={() =>
+                  tutorialRunning
+                    ? setRevealOthersInTutorial((prev) => !prev)
+                    : setShowActive(!showActive)
+                }
+              >
+                {showOtherUsers ? (
+                  <Eye className="h-7 w-7 text-orange-500" />
+                ) : (
+                  <EyeOff className="h-7 w-7" />
+                )}
+              </TooltipTrigger>
+              <TooltipContent>
+                {showOtherUsers
+                  ? "Hide other players on the map"
+                  : "Show other players on the map"}
+              </TooltipContent>
+            </Tooltip>
+          </TooltipProvider>
+          {userData.status === "AWAKE" && (
+            <button
+              type="button"
+              aria-label="Scout surrounding sectors"
+              aria-pressed={showSorrounding}
+              className={mapToolClassName}
+              onClick={() => setShowSorrounding((prev) => !prev)}
+            >
+              <UserRoundSearch
+                className={`h-7 w-7 hover:text-orange-500 ${showSorrounding ? "fill-orange-500" : ""}`}
+              />
+            </button>
+          )}
+        </>
+      )}
+      {isGlobal && !isTraveling && (
+        <FindSectorPopover
+          focusSector={globeFocusSector}
+          onFocusSector={setFocusSector}
+          triggerAsChild
+          trigger={
+            <button
+              type="button"
+              aria-label="Find a sector"
+              aria-pressed={focusSector !== null}
+              className={mapToolClassName}
+            >
+              <Locate
+                className={`h-7 w-7 hover:text-purple-500 ${focusSector !== null ? "text-purple-500" : ""}`}
+              />
+            </button>
+          }
+        />
+      )}
+      <Popover open={isQuickTravelOpen} onOpenChange={setQuickTravelOpen}>
+        <PopoverTrigger aria-label="Quick Travel" className={mapToolClassName}>
+          <Search className="h-7 w-7 hover:text-orange-500" />
+        </PopoverTrigger>
+        <PopoverContent className="w-72">
+          <p className="py-2 font-semibold">Quick Travel</p>
+          <p className="pb-2 text-muted-foreground text-sm">
+            Travel to a village, saved pin, or sector ID.
+          </p>
+          <div className="flex max-h-64 flex-col gap-1.5 overflow-y-auto pb-3">
+            {(isQuickTravelOpen ? travelDestinations : []).map((destination) => {
+              const dotColor = getReadableVillageHexColor(destination.color);
+              const description =
+                "description" in destination ? destination.description : undefined;
+              const button = (
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="outline"
+                  className="h-auto justify-start py-1.5"
+                  style={{ borderColor: dotColor }}
+                  disabled={!canTravelTo(destination.sector)}
+                  onClick={() => initiateTravelToSector(destination.sector)}
+                >
+                  <span
+                    className="mr-2 inline-block h-2.5 w-2.5 shrink-0 rounded-full ring-1 ring-black/30 dark:ring-white/30"
+                    style={{ backgroundColor: dotColor }}
+                  />
+                  <span className="flex min-w-0 flex-col items-start text-left">
+                    <span>{destination.label}</span>
+                    {description && (
+                      <span className="font-normal text-[10px] text-red-600 dark:text-red-400">
+                        {description}
+                      </span>
+                    )}
+                  </span>
+                  <span className="ml-auto text-muted-foreground text-xs">
+                    {destination.sector}
+                  </span>
+                </Button>
+              );
+              if (!description) {
+                return <Fragment key={destination.id}>{button}</Fragment>;
+              }
+              return (
+                <TooltipProvider key={destination.id} delayDuration={50}>
+                  <Tooltip>
+                    <TooltipTrigger asChild>{button}</TooltipTrigger>
+                    <TooltipContent>{description}</TooltipContent>
+                  </Tooltip>
+                </TooltipProvider>
+              );
+            })}
+          </div>
+          <div className="flex flex-col gap-2 border-t py-3">
+            <p className="font-semibold text-sm">Saved pins</p>
+            <p className="text-muted-foreground text-xs">
+              Saved on this device for your account.
+            </p>
+            {pins.map((pin, index) => (
+              <div
+                key={`${pin.sector}-${pin.longitude}-${pin.latitude}`}
+                className="flex gap-1"
+              >
+                <Button
+                  size="sm"
+                  variant="outline"
+                  className="h-auto min-w-0 flex-1 flex-col items-start whitespace-normal text-left"
+                  disabled={
+                    !!admissionRecovery ||
+                    isStartingTravel ||
+                    !canAttemptAwakeAction(userData)
+                  }
+                  onClick={() => setLocationRequest(pin)}
+                >
+                  <span>{pin.label}</span>
+                  <span className="text-muted-foreground text-xs">
+                    Sector {pin.sector} [{pin.longitude}, {pin.latitude}]
+                  </span>
+                </Button>
+                <Button
+                  size="sm"
+                  variant="outline"
+                  aria-label={`Remove pin ${pin.label}`}
+                  onClick={() => savePins(pins.filter((_, i) => i !== index))}
+                >
+                  ×
+                </Button>
+              </div>
+            ))}
+            <Input
+              aria-label="Pin name"
+              placeholder="Name this location"
+              maxLength={MAX_TRAVEL_PIN_LABEL_LENGTH}
+              value={pinLabel}
+              onChange={(event) => setPinLabel(event.target.value)}
+            />
+            <Button
+              size="sm"
+              variant="outline"
+              disabled={
+                !pinLabel.trim() ||
+                pins.length >= MAX_TRAVEL_PINS ||
+                !canAttemptAwakeAction(userData)
+              }
+              onClick={() => {
+                const next = pins.filter(
+                  (pin) =>
+                    pin.sector !== userData.sector ||
+                    pin.longitude !== userData.longitude ||
+                    pin.latitude !== userData.latitude,
+                );
+                savePins([
+                  ...next,
+                  {
+                    label: pinLabel.trim(),
+                    sector: userData.sector,
+                    longitude: userRef.current?.longitude ?? userData.longitude,
+                    latitude: userRef.current?.latitude ?? userData.latitude,
+                  },
+                ]);
+                setPinLabel("");
+              }}
+            >
+              Save current location
+            </Button>
+          </div>
+          <Form {...quickTravelForm}>
+            <form
+              onSubmit={quickTravelForm.handleSubmit((data) => {
+                initiateTravelToSector(data.sector);
+              })}
+              className="flex flex-col gap-2 border-t pt-3"
+            >
+              <SectorIdField control={quickTravelForm.control} />
+              <Button
+                type="submit"
+                size="sm"
+                disabled={!canTravelTo(quickTravelSector)}
+              >
+                Travel to Sector{" "}
+                {Number.isFinite(quickTravelSector) ? quickTravelSector : "..."}
+              </Button>
+            </form>
+          </Form>
+        </PopoverContent>
+      </Popover>
+      {!isGlobal && activeTab !== "" && (
+        <button
+          type="button"
+          aria-label="Expand world"
+          aria-expanded={isWorldExpanded}
+          disabled={!showSector || !SectorComponent}
+          className={cn(mapToolClassName, "hover:text-orange-500")}
+          onClick={() => setWorldExpanded(true)}
+        >
+          <Maximize2 className="h-7 w-7" />
+        </button>
+      )}
+      {isGlobal && (
+        <TooltipProvider delayDuration={50}>
+          <Tooltip>
+            <TooltipTrigger
+              aria-label="Show sector ownerships and factions"
+              aria-pressed={showOwnership}
+              className={mapToolClassName}
+              onClick={() => setShowOwnership(!showOwnership)}
+            >
+              <MapPinned
+                className={`h-7 w-7 ${showOwnership ? "text-orange-500" : ""}`}
+              />
+            </TooltipTrigger>
+            <TooltipContent>Show sector ownerships and factions</TooltipContent>
+          </Tooltip>
+        </TooltipProvider>
+      )}
+      {joinVillageBtn && (
+        <Confirm
+          title={`Join Village [${sectorVillage.name}]`}
+          proceed_label="Join village"
+          button={<GitMerge className={`mx-1 h-7 w-7 hover:text-orange-500`} />}
+          triggerLabel={`Join ${sectorVillage.name}`}
+          disabled={isJoining}
+          isLoading={isJoining}
+          keepOpenOnAccept
+          onAccept={(_, { close }) =>
+            joinVillage({ villageId: sectorVillage.id }, { onSettled: close })
+          }
+        >
+          Do you confirm that you wish to join {sectorVillage.name}? Please be aware
+          that if you join this village your training benefits & regen will be reduced
+          for {VILLAGE_REDUCED_GAINS_DAYS} days, and village loyalty bonuses will begin
+          from day 0.
+        </Confirm>
+      )}
+      {canCreateHideout && (
+        <Confirm
+          title="Purchase Hideout"
+          proceed_label={canAffordHideout ? "Purchase hideout" : "Not enough ryo"}
+          button={<HousePlus className={`mx-1 h-7 w-7 hover:text-orange-500`} />}
+          triggerLabel="Purchase hideout"
+          disabled={isCreatingHideout}
+          isLoading={isCreatingHideout}
+          keepOpenOnAccept
+          onAccept={(_, { close }) => {
+            if (!canAffordHideout) return close();
+            purchaseHideout(
+              { clanId: userData.clanId || "", sector: currentSector ?? 0 },
+              { onSettled: close },
+            );
+          }}
+        >
+          As a leader of a faction, you have the option of founding a hideout for your
+          faction, thereby effectively de-coupling yourself from the common syndicate of
+          outlaws. The purchase costs <b>{HIDEOUT_COST} ryo</b>, and the faction
+          currently has <b>{userData?.clan?.bank} ryo</b>. Do you want to create your
+          faction hideout in this sector?
+        </Confirm>
+      )}
+    </>
+  );
+
   // Render
   return (
     <>
@@ -1117,336 +1444,29 @@ function Travel() {
         subtitle={subtitle}
         padding={false}
         topRightContent={
-          <NavTabs
-            current={isGlobal ? globalLink : activeTab}
-            options={isTraveling ? [globalLink] : [sectorLink, globalLink]}
-            labels={{ [sectorLink]: <TravelPositionLabel /> }}
-            setValue={setActiveTab}
-            onChange={(value) => {
-              if (value !== globalLink)
-                setCameraFocusRevision((previous) => previous + 1);
-            }}
-          />
+          isPhone ? (
+            navTabs
+          ) : (
+            <div className="flex flex-row items-center">
+              {mapTools}
+              {navTabs}
+            </div>
+          )
         }
       >
-        {/* Map controls stay on screen: travel is live, so none of them hides behind a menu. */}
-        <div
-          role="toolbar"
-          aria-label="Travel controls"
-          className="flex flex-wrap items-center gap-1 border-b px-2 py-1"
-        >
-          <WarFieldActions />
-          {!isGlobal && activeTab !== "" && (
-            <>
-              {userData?.anbuId &&
-                (autoAttackMode ? (
-                  <button
-                    type="button"
-                    aria-label="Stop auto-attack"
-                    aria-pressed={true}
-                    className={mapToolClassName}
-                    onClick={() => setAutoAttackMode(false)}
-                  >
-                    <Zap className="h-7 w-7 text-red-500" />
-                  </button>
-                ) : (
-                  <button
-                    type="button"
-                    aria-label="Start auto-attack"
-                    aria-pressed={false}
-                    className={mapToolClassName}
-                    onClick={() => setShowAutoAttackModal(true)}
-                  >
-                    <ZapOff className="h-7 w-7 hover:text-red-500" />
-                  </button>
-                ))}
-              <StealthControls
-                onRevealed={(players) => {
-                  setRevealedPlayers(players);
-                  setShowRevealedPlayersModal(true);
-                }}
-              />
-              <TooltipProvider delayDuration={50}>
-                <Tooltip>
-                  <TooltipTrigger
-                    aria-label="Show other players on the map"
-                    aria-pressed={showOtherUsers}
-                    className={mapToolClassName}
-                    onClick={() =>
-                      tutorialRunning
-                        ? setRevealOthersInTutorial((prev) => !prev)
-                        : setShowActive(!showActive)
-                    }
-                  >
-                    {showOtherUsers ? (
-                      <Eye className="h-7 w-7 text-orange-500" />
-                    ) : (
-                      <EyeOff className="h-7 w-7" />
-                    )}
-                  </TooltipTrigger>
-                  <TooltipContent>
-                    {showOtherUsers
-                      ? "Hide other players on the map"
-                      : "Show other players on the map"}
-                  </TooltipContent>
-                </Tooltip>
-              </TooltipProvider>
-              {userData.status === "AWAKE" && (
-                <button
-                  type="button"
-                  aria-label="Scout surrounding sectors"
-                  aria-pressed={showSorrounding}
-                  className={mapToolClassName}
-                  onClick={() => setShowSorrounding((prev) => !prev)}
-                >
-                  <UserRoundSearch
-                    className={`h-7 w-7 hover:text-orange-500 ${showSorrounding ? "fill-orange-500" : ""}`}
-                  />
-                </button>
-              )}
-            </>
-          )}
-          {isGlobal && !isTraveling && (
-            <FindSectorPopover
-              focusSector={globeFocusSector}
-              onFocusSector={setFocusSector}
-              triggerAsChild
-              trigger={
-                <button
-                  type="button"
-                  aria-label="Find a sector"
-                  aria-pressed={focusSector !== null}
-                  className={mapToolClassName}
-                >
-                  <Locate
-                    className={`h-7 w-7 hover:text-purple-500 ${focusSector !== null ? "text-purple-500" : ""}`}
-                  />
-                </button>
-              }
-            />
-          )}
-          <Popover open={isQuickTravelOpen} onOpenChange={setQuickTravelOpen}>
-            <PopoverTrigger aria-label="Quick Travel" className={mapToolClassName}>
-              <Search className="h-7 w-7 hover:text-orange-500" />
-            </PopoverTrigger>
-            <PopoverContent className="w-72">
-              <p className="py-2 font-semibold">Quick Travel</p>
-              <p className="pb-2 text-muted-foreground text-sm">
-                Travel to a village, saved pin, or sector ID.
-              </p>
-              <div className="flex max-h-64 flex-col gap-1.5 overflow-y-auto pb-3">
-                {(isQuickTravelOpen ? travelDestinations : []).map((destination) => {
-                  const dotColor = getReadableVillageHexColor(destination.color);
-                  const description =
-                    "description" in destination ? destination.description : undefined;
-                  const button = (
-                    <Button
-                      type="button"
-                      size="sm"
-                      variant="outline"
-                      className="h-auto justify-start py-1.5"
-                      style={{ borderColor: dotColor }}
-                      disabled={!canTravelTo(destination.sector)}
-                      onClick={() => initiateTravelToSector(destination.sector)}
-                    >
-                      <span
-                        className="mr-2 inline-block h-2.5 w-2.5 shrink-0 rounded-full ring-1 ring-black/30 dark:ring-white/30"
-                        style={{ backgroundColor: dotColor }}
-                      />
-                      <span className="flex min-w-0 flex-col items-start text-left">
-                        <span>{destination.label}</span>
-                        {description && (
-                          <span className="font-normal text-[10px] text-red-600 dark:text-red-400">
-                            {description}
-                          </span>
-                        )}
-                      </span>
-                      <span className="ml-auto text-muted-foreground text-xs">
-                        {destination.sector}
-                      </span>
-                    </Button>
-                  );
-                  if (!description) {
-                    return <Fragment key={destination.id}>{button}</Fragment>;
-                  }
-                  return (
-                    <TooltipProvider key={destination.id} delayDuration={50}>
-                      <Tooltip>
-                        <TooltipTrigger asChild>{button}</TooltipTrigger>
-                        <TooltipContent>{description}</TooltipContent>
-                      </Tooltip>
-                    </TooltipProvider>
-                  );
-                })}
-              </div>
-              <div className="flex flex-col gap-2 border-t py-3">
-                <p className="font-semibold text-sm">Saved pins</p>
-                <p className="text-muted-foreground text-xs">
-                  Saved on this device for your account.
-                </p>
-                {pins.map((pin, index) => (
-                  <div
-                    key={`${pin.sector}-${pin.longitude}-${pin.latitude}`}
-                    className="flex gap-1"
-                  >
-                    <Button
-                      size="sm"
-                      variant="outline"
-                      className="h-auto min-w-0 flex-1 flex-col items-start whitespace-normal text-left"
-                      disabled={
-                        !!admissionRecovery ||
-                        isStartingTravel ||
-                        !canAttemptAwakeAction(userData)
-                      }
-                      onClick={() => setLocationRequest(pin)}
-                    >
-                      <span>{pin.label}</span>
-                      <span className="text-muted-foreground text-xs">
-                        Sector {pin.sector} [{pin.longitude}, {pin.latitude}]
-                      </span>
-                    </Button>
-                    <Button
-                      size="sm"
-                      variant="outline"
-                      aria-label={`Remove pin ${pin.label}`}
-                      onClick={() => savePins(pins.filter((_, i) => i !== index))}
-                    >
-                      ×
-                    </Button>
-                  </div>
-                ))}
-                <Input
-                  aria-label="Pin name"
-                  placeholder="Name this location"
-                  maxLength={MAX_TRAVEL_PIN_LABEL_LENGTH}
-                  value={pinLabel}
-                  onChange={(event) => setPinLabel(event.target.value)}
-                />
-                <Button
-                  size="sm"
-                  variant="outline"
-                  disabled={
-                    !pinLabel.trim() ||
-                    pins.length >= MAX_TRAVEL_PINS ||
-                    !canAttemptAwakeAction(userData)
-                  }
-                  onClick={() => {
-                    const next = pins.filter(
-                      (pin) =>
-                        pin.sector !== userData.sector ||
-                        pin.longitude !== userData.longitude ||
-                        pin.latitude !== userData.latitude,
-                    );
-                    savePins([
-                      ...next,
-                      {
-                        label: pinLabel.trim(),
-                        sector: userData.sector,
-                        longitude: userRef.current?.longitude ?? userData.longitude,
-                        latitude: userRef.current?.latitude ?? userData.latitude,
-                      },
-                    ]);
-                    setPinLabel("");
-                  }}
-                >
-                  Save current location
-                </Button>
-              </div>
-              <Form {...quickTravelForm}>
-                <form
-                  onSubmit={quickTravelForm.handleSubmit((data) => {
-                    initiateTravelToSector(data.sector);
-                  })}
-                  className="flex flex-col gap-2 border-t pt-3"
-                >
-                  <SectorIdField control={quickTravelForm.control} />
-                  <Button
-                    type="submit"
-                    size="sm"
-                    disabled={!canTravelTo(quickTravelSector)}
-                  >
-                    Travel to Sector{" "}
-                    {Number.isFinite(quickTravelSector) ? quickTravelSector : "..."}
-                  </Button>
-                </form>
-              </Form>
-            </PopoverContent>
-          </Popover>
-          {!isGlobal && activeTab !== "" && (
-            <button
-              type="button"
-              aria-label="Expand world"
-              aria-expanded={isWorldExpanded}
-              disabled={!showSector || !SectorComponent}
-              className={cn(mapToolClassName, "hover:text-orange-500")}
-              onClick={() => setWorldExpanded(true)}
-            >
-              <Maximize2 className="h-7 w-7" />
-            </button>
-          )}
-          {isGlobal && (
-            <TooltipProvider delayDuration={50}>
-              <Tooltip>
-                <TooltipTrigger
-                  aria-label="Show sector ownerships and factions"
-                  aria-pressed={showOwnership}
-                  className={mapToolClassName}
-                  onClick={() => setShowOwnership(!showOwnership)}
-                >
-                  <MapPinned
-                    className={`h-7 w-7 ${showOwnership ? "text-orange-500" : ""}`}
-                  />
-                </TooltipTrigger>
-                <TooltipContent>Show sector ownerships and factions</TooltipContent>
-              </Tooltip>
-            </TooltipProvider>
-          )}
-          {joinVillageBtn && (
-            <Confirm
-              title={`Join Village [${sectorVillage.name}]`}
-              proceed_label="Join village"
-              button={<GitMerge className={`mx-1 h-7 w-7 hover:text-orange-500`} />}
-              triggerLabel={`Join ${sectorVillage.name}`}
-              disabled={isJoining}
-              isLoading={isJoining}
-              keepOpenOnAccept
-              onAccept={(_, { close }) =>
-                joinVillage({ villageId: sectorVillage.id }, { onSettled: close })
-              }
-            >
-              Do you confirm that you wish to join {sectorVillage.name}? Please be aware
-              that if you join this village your training benefits & regen will be
-              reduced for {VILLAGE_REDUCED_GAINS_DAYS} days, and village loyalty bonuses
-              will begin from day 0.
-            </Confirm>
-          )}
-          {canCreateHideout && (
-            <Confirm
-              title="Purchase Hideout"
-              proceed_label={canAffordHideout ? "Purchase hideout" : "Not enough ryo"}
-              button={<HousePlus className={`mx-1 h-7 w-7 hover:text-orange-500`} />}
-              triggerLabel="Purchase hideout"
-              disabled={isCreatingHideout}
-              isLoading={isCreatingHideout}
-              keepOpenOnAccept
-              onAccept={(_, { close }) => {
-                if (!canAffordHideout) return close();
-                purchaseHideout(
-                  { clanId: userData.clanId || "", sector: currentSector ?? 0 },
-                  { onSettled: close },
-                );
-              }}
-            >
-              As a leader of a faction, you have the option of founding a hideout for
-              your faction, thereby effectively de-coupling yourself from the common
-              syndicate of outlaws. The purchase costs <b>{HIDEOUT_COST} ryo</b>, and
-              the faction currently has <b>{userData?.clan?.bank} ryo</b>. Do you want
-              to create your faction hideout in this sector?
-            </Confirm>
-          )}
-        </div>
         {/* The countdown needs a viewport even while the destination scene is loading. */}
         <div className={userData.travelFinishAt ? "relative min-h-80" : "relative"}>
+          {/* On phones the tools float on the map's edge instead of folding into the header menu. */}
+          {isPhone && (
+            <div
+              role="toolbar"
+              aria-label="Travel controls"
+              aria-orientation="vertical"
+              className="bg-card/90 absolute top-16 right-2 z-10 flex max-h-[calc(100%-5rem)] flex-col items-center gap-1 overflow-y-auto rounded-lg border p-1 shadow-md backdrop-blur-sm"
+            >
+              {mapTools}
+            </div>
+          )}
           {(showGlobal || (hasOpenedGlobal && villages && globe)) && (
             <div
               aria-hidden={!showGlobal}
@@ -2027,10 +2047,12 @@ const SectorLoadingPlaceholder = () => (
 // Alias the procedure so its action name is not interpreted as a React hook.
 const activateSensory = api.stealth.useSensory;
 
-/** A 40px icon toggle in the map's title bar. */
+/** Phone widths, where the map tools sit in a rail on the map instead of the header. */
+const TRAVEL_MAP_RAIL_QUERY = "(max-width: 639px)";
+
 /** 44px map tools; a pressed toggle keeps a filled background so its state reads without colour. */
 const mapToolClassName =
-  "inline-flex size-11 shrink-0 items-center justify-center rounded-md hover:bg-accent focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-50 aria-pressed:bg-accent aria-pressed:ring-1 aria-pressed:ring-inset aria-pressed:ring-orange-500/60";
+  "inline-flex size-[44px] shrink-0 items-center justify-center rounded-md hover:bg-accent focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-50 aria-pressed:bg-accent aria-pressed:ring-1 aria-pressed:ring-inset aria-pressed:ring-orange-500/60";
 
 /** Public player fields shown by sensory reveals and their map markers. */
 type RevealedPlayer = NonNullable<

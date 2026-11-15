@@ -18,6 +18,7 @@ import * as tutorial from "@/hooks/tutorial";
 import { useGameMenu } from "@/hooks/useGameMenu";
 import * as itemCache from "@/hooks/useItemConsumptionCacheUpdate";
 import * as assetLibrary from "@/hooks/useMapAssetLibrary";
+import * as media from "@/hooks/useMediaQuery";
 import * as sectorCache from "@/hooks/useSectorCacheUpdate";
 import * as sectorVillage from "@/hooks/useSectorVillage";
 import * as ContentBox from "@/layout/ContentBox";
@@ -142,10 +143,11 @@ beforeEach(() => {
     currentStep: undefined,
     completeTutorialAction: vi.fn(),
   } as never);
+  vi.spyOn(media, "useMediaQuery").mockReturnValue(false);
   vi.spyOn(ContentBox, "default").mockImplementation(
     ({ children, topRightContent }) => (
       <div>
-        {topRightContent}
+        <div data-content-box-actions>{topRightContent}</div>
         {children}
       </div>
     ),
@@ -238,7 +240,8 @@ it("updates the Travel destination when the saved automatic-wake preference chan
     result.current.systems.find((entry) => entry.id === "tutorial-travel")?.href,
   ).toBe("/home");
 });
-it("keeps the map tools in a toolbar outside the header controls", () => {
+it("floats the map tools on the map on phones, outside the header controls", () => {
+  vi.spyOn(media, "useMediaQuery").mockReturnValue(true);
   const view = render(<TravelPage />);
   const toolbar = view.getByRole("toolbar", { name: "Travel controls" });
   expect(within(toolbar).getByRole("button", { name: "Quick Travel" })).toBeDefined();
@@ -247,6 +250,16 @@ it("keeps the map tools in a toolbar outside the header controls", () => {
       "[data-content-box-actions] [aria-label='Quick Travel']",
     ),
   ).toBeNull();
+});
+
+it("keeps the map tools in the header beside the tabs on wider screens", () => {
+  const view = render(<TravelPage />);
+  expect(view.queryByRole("toolbar", { name: "Travel controls" })).toBeNull();
+  expect(
+    view.container.querySelector(
+      "[data-content-box-actions] [aria-label='Quick Travel']",
+    ),
+  ).not.toBeNull();
 });
 
 it("keeps Quick Travel disabled for the current sector", async () => {
