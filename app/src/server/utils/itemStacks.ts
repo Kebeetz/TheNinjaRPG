@@ -74,10 +74,9 @@ export const mergeUserItemStacks = async (
  * own row while it runs, and nothing happens when its timer ends, so inventory reads join it.
  * Nothing joins while the owner is in a battle; the craft joins on a read after it.
  * @param rows - The owner's item rows as just read
- * @returns Whether this join changed the rows, so they should be read again. A join that
- * failed or found its rows claimed by a concurrent read's join changed nothing here: the
- * rows already read are still a whole inventory, while a read now could miss stacks that
- * the other join holds until it publishes them.
+ * @returns Whether finished crafts were found, so the rows should be read again once active
+ * merges settle: this join changed them, or a concurrent read's join did, and the rows
+ * already read can name stacks that merge has removed.
  */
 export const joinFinishedCrafts = async (
   client: DrizzleClient,
@@ -101,7 +100,7 @@ export const joinFinishedCrafts = async (
     false,
     ownerOutOfBattle(),
   );
-  if (!joined) return false;
+  if (!joined) return true;
   // Queue settlement may add a finished keeper after the initial inventory snapshot.
   // Acknowledge every confirmed merge row so later player splits stay split.
   await updateUserItemForJoinFinishedCrafts(
@@ -110,5 +109,5 @@ export const joinFinishedCrafts = async (
     [...finished.map((row) => row.id), ...joined.map((row) => row.id)],
     new Date(),
   );
-  return joined.length > 0;
+  return true;
 };

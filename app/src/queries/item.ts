@@ -2054,7 +2054,14 @@ export const insertUserItemForSplitItemStack = (
     // Carry the selected cosmetic onto the split-off stack so splitting does
     // not silently drop the active variant.
     activeVariantId: currentUserItem.activeVariantId,
-    craftingFinishedAt: currentUserItem.craftingFinishedAt,
+    // A running craft's half finishes with it. A finished craft time is not carried, so the
+    // split-off half never joins as a finished craft, even when the split lands between a
+    // join and the clearing of the craft time it joined.
+    craftingFinishedAt:
+      currentUserItem.craftingFinishedAt &&
+      currentUserItem.craftingFinishedAt > new Date()
+        ? currentUserItem.craftingFinishedAt
+        : null,
     dropChancePerc: currentUserItem.dropChancePerc,
     createdAt: new Date(),
     updatedAt: new Date(),

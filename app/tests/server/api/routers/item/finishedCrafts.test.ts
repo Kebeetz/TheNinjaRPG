@@ -117,6 +117,22 @@ describeWithDatabase("finished crafts in the backpack", () => {
     expect((await stacks()).map(([, quantity]) => quantity).sort()).toEqual([2, 4]);
   });
 
+  it("keeps a split apart when it splits a finished craft before its craft time is cleared", async () => {
+    // A join has published this crafted stack but not yet cleared its craft time.
+    await insertUserItems([craftedKits(7, -minute)]);
+    const split = await splitItemStack(
+      await getTestDatabase(),
+      "kit-crafted",
+      userId,
+      3,
+    );
+    expect(split.success).toBe(true);
+    const halves = await stacks();
+    expect(halves.map(([, quantity]) => quantity).sort()).toEqual([3, 4]);
+    // The split-off half carries no finished craft time, so it never joins as a craft.
+    expect(halves.find(([id]) => id !== "kit-crafted")?.[2]).toBe(false);
+  });
+
   it.each([-2 * minute, -minute / 2])(
     "acknowledges a concurrently settled craft kept by the merge (finish offset %s)",
     async (finishesInMs) => {
@@ -181,8 +197,8 @@ describeWithDatabase("finished crafts in the backpack", () => {
         craftingFinishedAt: new Date(Date.now() - minute),
       },
     ];
-    // Nothing joined here, so the rows already read stay this read's answer.
-    expect(await joinFinishedCrafts(db, userId, seen)).toBe(false);
+    // The rows this read saw are outdated: it reads them again once the other merge settles.
+    expect(await joinFinishedCrafts(db, userId, seen)).toBe(true);
     // The claiming merge fails and restores the quantity: a later read still joins the craft.
     await db
       .update(userItem)
@@ -251,12 +267,43 @@ describeWithDatabase("finished crafts in the backpack", () => {
       await observed.promise;
       publish.resolve();
       const answers = await Promise.all([merging, reader]);
+      // Each answer holds the stacks that exist, not rows a concurrent join already merged.
+      const live = (await stacks()).map(([id, quantity]) => `${id}:${quantity}`);
       for (const inventory of answers) {
-        expect(inventory.reduce((sum, row) => sum + row.quantity, 0)).toBe(7);
+        expect(inventory.map((row) => `${row.id}:${row.quantity}`).sort()).toEqual(
+          live,
+        );
       }
       expect(await stacks()).toEqual([["kit-carried", 7, false]]);
     },
   );
+  it("answers a read that saw the craft before another read joined it with the joined stack", async () => {
+    await insertUserItems([
+      { id: "kit-carried", userId, itemId: "kit", quantity: 3 },
+      craftedKits(4, -minute),
+    ]);
+    const db = await getTestDatabase();
+    let isFirstRead = true;
+    const inventory = await callerForDatabase(
+      itemRouter,
+      userId,
+      overrideQuery(db, "userItem", {
+        findMany: async (read, ...args) => {
+          const rows = await read(...args);
+          if (isFirstRead) {
+            isFirstRead = false;
+            // The other inventory read joins the craft right after this one read its rows.
+            await (await callerFor(itemRouter, userId)).getUserItemsWithVariants();
+          }
+          return rows;
+        },
+      }),
+    ).getUserItems();
+    expect(inventory.map((row) => `${row.id}:${row.quantity}`)).toEqual([
+      "kit-carried:7",
+    ]);
+  });
+
   it("answers both inventory reads in full while they join the same craft", async () => {
     const api = await callerFor(itemRouter, userId);
     const db = await getTestDatabase();
