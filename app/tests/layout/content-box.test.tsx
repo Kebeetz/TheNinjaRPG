@@ -18,9 +18,9 @@ import {
 } from "../setup/browserGlobals";
 import { actualContentBox } from "../setup/preload";
 
+const SUBTITLE_WIDTH = 400;
 let headerWidth = 600;
 let controlWidth = 240;
-let actionsWidth = 400;
 const resizeCallbacks = new Set<() => void>();
 const originalClientWidth = Object.getOwnPropertyDescriptor(
   Element.prototype,
@@ -48,7 +48,6 @@ beforeEach(() => {
   installBrowserGlobals({ resizeObserver: HeaderResizeObserver });
   headerWidth = 600;
   controlWidth = 240;
-  actionsWidth = 400;
   vi.spyOn(contentBox, "default").mockImplementation(actualContentBox);
   vi.spyOn(navigation, "useRouter").mockReturnValue({
     back: vi.fn(),
@@ -58,12 +57,13 @@ beforeEach(() => {
     configurable: true,
     get() {
       if (this.hasAttribute("data-content-box-header")) return headerWidth;
-      return this.hasAttribute("data-content-box-actions") ? actionsWidth : 100;
+      return 100;
     },
   });
   Object.defineProperty(Element.prototype, "scrollWidth", {
     configurable: true,
     get() {
+      if (this.hasAttribute("data-content-box-subtitle")) return SUBTITLE_WIDTH;
       return this.hasAttribute("data-content-box-controls") ? controlWidth : 100;
     },
   });
@@ -71,6 +71,12 @@ beforeEach(() => {
   vi.spyOn(Element.prototype, "getBoundingClientRect").mockImplementation(function (
     this: Element,
   ) {
+    // A subtitle, and the title block around it, is wider than any title in these tests.
+    if (
+      this.querySelector("[data-content-box-subtitle]") ||
+      this.hasAttribute("data-content-box-subtitle")
+    )
+      return new window.DOMRect(0, 0, SUBTITLE_WIDTH, 44);
     const key = this.getAttribute("data-header-item");
     const width =
       key === null || this.childElementCount === 0 ? 0 : key === "tabs" ? 90 : 44;
@@ -387,8 +393,9 @@ it("keeps every priority control in the header row while they fit", () => {
 });
 
 it("measures the room for controls from the title, not a longer subtitle", () => {
-  // A long subtitle widens the title block and squeezes the actions; it truncates instead.
-  actionsWidth = 150;
+  // The controls (222px) fit beside the title's text but not beside its 400px subtitle,
+  // which truncates instead.
+  headerWidth = titleTextWidth() + 230;
   const view = render(
     <ContentBox
       title="Travel"
@@ -406,6 +413,46 @@ it("measures the room for controls from the title, not a longer subtitle", () =>
     "",
     "Tabs",
   ]);
+});
+
+it("names the More menu after its button, so screen readers reach it after the row", () => {
+  const view = setupPriority();
+  resizeActions(200);
+  const more = view.getByRole("button", { name: "More Travel controls" });
+  const menu = view.getByRole("region", { name: "More Travel controls", hidden: true });
+  expect(
+    more.compareDocumentPosition(menu) & Node.DOCUMENT_POSITION_FOLLOWING,
+  ).toBeTruthy();
+});
+
+it("opens More when a control folds into it while its popover is open", () => {
+  const view = setupPriority(
+    travelLikeItems({
+      "quick-travel": {
+        node: (
+          <button type="button" aria-expanded="true">
+            Quick travel
+          </button>
+        ),
+      },
+    }),
+  );
+  resizeActions(200);
+  const more = view.getByRole("button", { name: "More Travel controls" });
+  expect(more.getAttribute("aria-expanded")).toBe("true");
+  expect(
+    view.getByRole("button", { name: "Quick travel" }).closest("[inert]"),
+  ).toBeNull();
+});
+
+it("moves focus back to the row when More empties while it has focus", () => {
+  const view = setupPriority();
+  resizeActions(200);
+  view.getByRole("button", { name: "More Travel controls" }).focus();
+  resizeActions(400);
+  expect(document.activeElement).toBe(
+    view.getByRole("button", { name: "Show players" }),
+  );
 });
 
 it("moves the lowest-priority controls behind More, keeping both lists in display order", () => {

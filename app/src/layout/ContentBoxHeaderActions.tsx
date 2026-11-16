@@ -234,6 +234,7 @@ export function ContentBoxPriorityActions({
   const rootRef = useRef<HTMLDivElement>(null);
   const triggerRef = useRef<HTMLButtonElement>(null);
   const focusedItemRef = useRef<HTMLElement | null>(null);
+  const isTriggerFocusedRef = useRef(false);
   const [menu, setMenu] = useState<HeaderMenuLayout>(EMPTY_MENU);
   const [isOpen, setIsOpen] = useState(false);
   const baseId = useId();
@@ -283,6 +284,7 @@ export function ContentBoxPriorityActions({
       // Moving a keyed wrapper can blur its control before layout effects run.
       focusedItemRef.current =
         document.activeElement?.closest<HTMLElement>("[data-header-item]") ?? null;
+      isTriggerFocusedRef.current = document.activeElement === triggerRef.current;
       setMenu((previous) =>
         JSON.stringify(previous) === JSON.stringify(next) ? previous : next,
       );
@@ -306,13 +308,34 @@ export function ContentBoxPriorityActions({
   const previousPlacesRef = useRef(menu.places);
 
   // A focused control that moves behind the closed menu turns inert and would drop keyboard
-  // focus, so focus moves to More before the browser repaints.
+  // focus, so focus moves to More before the browser repaints. A control whose popover or
+  // dialog is open opens the menu instead, so the layer keeps a visible control. When the menu
+  // empties while More has focus, focus moves to the first control back in the row.
   useLayoutEffect(() => {
     const previousPlaces = previousPlacesRef.current;
     previousPlacesRef.current = menu.places;
     const focused = focusedItemRef.current;
     focusedItemRef.current = null;
+    const wasTriggerFocused = isTriggerFocusedRef.current;
+    isTriggerFocusedRef.current = false;
+    if (
+      wasTriggerFocused &&
+      Object.keys(menu.places).length === 0 &&
+      Object.keys(previousPlaces).length > 0
+    ) {
+      rootRef.current?.querySelector<HTMLElement>(FOCUSABLE_CONTROL)?.focus();
+      return;
+    }
     if (isExpanded) return;
+    const hasOpenLayer = Object.keys(menu.places).some(
+      (key) =>
+        !previousPlaces[key] &&
+        document.getElementById(itemId(key))?.querySelector(OPEN_CONTROL_LAYER),
+    );
+    if (hasOpenLayer) {
+      setIsOpen(true);
+      return;
+    }
     const key = focused?.dataset.headerItem;
     if (
       key &&
@@ -385,7 +408,7 @@ export function ContentBoxPriorityActions({
         )}
         style={
           place
-            ? { top: `calc(100% + 4px + ${place.top}px)`, right: place.right }
+            ? { top: `calc(100% + 0.25rem + ${place.top}px)`, right: place.right }
             : undefined
         }
       >
@@ -414,18 +437,6 @@ export function ContentBoxPriorityActions({
       data-content-box-actions
       data-expanded={isExpanded || undefined}
     >
-      {isMenuShown && (
-        <section
-          id={menuId}
-          aria-label={`More ${label} controls`}
-          aria-owns={Object.keys(menu.places).map(itemId).join(" ")}
-          className={cn(
-            "bg-popover absolute top-full right-0 z-[45] mt-1 rounded-md border shadow-md",
-            !isExpanded && "invisible",
-          )}
-          style={{ width: menu.width, height: menu.height }}
-        ></section>
-      )}
       {/* One list, so a control that moves between the row and More keeps its element. The
           row comes before More and the menu after it, so Tab follows what is shown. */}
       {[
@@ -450,6 +461,21 @@ export function ContentBoxPriorityActions({
             />
           )}
         </Button>,
+        // The menu panel names its controls after More, so screen readers reach them after the
+        // row, as keyboard focus does.
+        isMenuShown ? (
+          <section
+            key={MORE_MENU_KEY}
+            id={menuId}
+            aria-label={`More ${label} controls`}
+            aria-owns={Object.keys(menu.places).map(itemId).join(" ")}
+            className={cn(
+              "bg-popover absolute top-full right-0 z-[45] mt-1 rounded-md border shadow-md",
+              !isExpanded && "invisible",
+            )}
+            style={{ width: menu.width, height: menu.height }}
+          ></section>
+        ) : null,
         ...items.filter((item) => menu.places[item.key]).map(renderItem),
       ]}
     </div>
@@ -457,6 +483,10 @@ export function ContentBoxPriorityActions({
 }
 
 const MORE_TRIGGER_KEY = "content-box-more-trigger";
+const MORE_MENU_KEY = "content-box-more-menu";
+const OPEN_CONTROL_LAYER = '[aria-expanded="true"], [data-state="open"]';
+const FOCUSABLE_CONTROL =
+  'a[href], button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])';
 
 /** The width of a content box title's text and back icon, independent of its subtitle. */
 const titleTextWidth = (title: HTMLElement | null) => {
